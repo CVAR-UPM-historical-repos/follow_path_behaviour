@@ -1,0 +1,5 @@
+# /**/follow_path_behaviour: 
+/**:
+  ros__parameters:
+    default_follow_path_plugin: "follow_path_plugins::FollowPathTraj"
+    follow_path_threshold: 0.1  # [m]
