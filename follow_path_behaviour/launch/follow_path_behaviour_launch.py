@@ -19,7 +19,6 @@ def generate_launch_description():
         Node(
             package='follow_path_behaviour',
             executable='follow_path_behaviour_node',
-            name='follow_path_behaviour_node',
             namespace=LaunchConfiguration('drone_id'),
             parameters=[config],
             output='screen',
