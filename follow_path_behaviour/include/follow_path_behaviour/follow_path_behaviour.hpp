@@ -26,7 +26,7 @@ public:
         {
             follow_path_ = loader_->createSharedInstance(this->get_parameter("default_follow_path_plugin").as_string());
             follow_path_->initialize(this, this->get_parameter("follow_path_threshold").as_double());
-            RCLCPP_INFO(this->get_logger(), "PLUGIN LOADED: %s", this->get_parameter("default_follow_path_plugin").as_string());
+            RCLCPP_INFO(this->get_logger(), "PLUGIN LOADED: %s", this->get_parameter("default_follow_path_plugin").as_string().c_str());
         }
         catch (pluginlib::PluginlibException &ex)
         {
