@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.5)
 set(PROJECT_NAME follow_path_behaviour)
-project(${PROJECT_NAME})
+project(${PROJECT_NAME} VERSION 0.1.0)
 
 # Default to C++17
 if(NOT CMAKE_CXX_STANDARD)
@@ -24,12 +24,12 @@ foreach(DEPENDENCY ${PROJECT_DEPENDENCIES})
   find_package(${DEPENDENCY} REQUIRED)
 endforeach()
 
-add_executable(follow_path_behaviour_node src/follow_path_behaviour_node.cpp)
-target_include_directories(follow_path_behaviour_node
+add_executable(${PROJECT_NAME}_node src/follow_path_behaviour_node.cpp)
+target_include_directories(${PROJECT_NAME}_node
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>)
-ament_target_dependencies(follow_path_behaviour_node ${PROJECT_DEPENDENCIES})
+ament_target_dependencies(${PROJECT_NAME}_node ${PROJECT_DEPENDENCIES})
 
 include_directories(
   include
