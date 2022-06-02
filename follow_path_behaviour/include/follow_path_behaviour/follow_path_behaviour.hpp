@@ -55,7 +55,8 @@ public:
     {
         try
         {
-            this->declare_parameter<std::string>("default_follow_path_plugin");
+            // this->declare_parameter<std::string>("default_follow_path_plugin");
+            this->declare_parameter("default_follow_path_plugin"); // TODO: Fix for ROS2 Galactic
         }
         catch(const rclcpp::ParameterTypeException& e)
         {
@@ -64,7 +65,8 @@ public:
         }
         try
         {
-            this->declare_parameter<double>("follow_path_threshold");
+            // this->declare_parameter<double>("follow_path_threshold");
+            this->declare_parameter("follow_path_threshold"); // TODO: Fix for ROS2 Galactic
         }
         catch(const rclcpp::ParameterTypeException& e)
         {
