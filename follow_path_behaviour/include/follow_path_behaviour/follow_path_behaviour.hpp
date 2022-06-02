@@ -53,24 +53,45 @@ public:
 
     FollowPathBehaviour() : as2::BasicBehaviour<as2_msgs::action::FollowPath>(as2_names::actions::behaviours::followpath)
     {
-        this->declare_parameter("default_follow_path_plugin");
-        this->declare_parameter("follow_path_threshold");
+        try
+        {
+            this->declare_parameter<std::string>("default_follow_path_plugin");
+        }
+        catch(const rclcpp::ParameterTypeException& e)
+        {
+            RCLCPP_FATAL(this->get_logger(), "Launch argument <default_follow_path_plugin> not defined or malformed: %s", e.what());
+            this->~FollowPathBehaviour();
+        }
+        try
+        {
+            this->declare_parameter<double>("follow_path_threshold");
+        }
+        catch(const rclcpp::ParameterTypeException& e)
+        {
+            RCLCPP_FATAL(this->get_logger(), "Launch argument <follow_path_threshold> not defined or malformed: %s", e.what());
+            this->~FollowPathBehaviour();
+        }
 
         loader_ = std::make_shared<pluginlib::ClassLoader<follow_path_base::FollowPathBase>>("follow_path_plugin_base", "follow_path_base::FollowPathBase");
 
         try
         {
-            follow_path_ = loader_->createSharedInstance(this->get_parameter("default_follow_path_plugin").as_string());
+            std::string plugin_name = this->get_parameter("default_follow_path_plugin").as_string();
+            plugin_name += "::Plugin";
+            follow_path_ = loader_->createSharedInstance(plugin_name);
             follow_path_->initialize(this, this->get_parameter("follow_path_threshold").as_double());
-            RCLCPP_INFO(this->get_logger(), "FOLLOW PATH PLUGIN LOADED: %s", this->get_parameter("default_follow_path_plugin").as_string().c_str());
+            RCLCPP_INFO(this->get_logger(), "FOLLOW PATH PLUGIN LOADED: %s", plugin_name.c_str());
         }
         catch (pluginlib::PluginlibException &ex)
         {
             RCLCPP_ERROR(this->get_logger(), "The plugin failed to load for some reason. Error: %s\n", ex.what());
+            this->~FollowPathBehaviour();
         }
 
         RCLCPP_DEBUG(this->get_logger(), "Follow Path Behaviour ready!");
     };
+
+    ~FollowPathBehaviour(){};
 
     rclcpp_action::GoalResponse onAccepted(const std::shared_ptr<const as2_msgs::action::FollowPath::Goal> goal)
     {
