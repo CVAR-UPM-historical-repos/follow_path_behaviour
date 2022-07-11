@@ -42,6 +42,11 @@
 #include "as2_core/names/topics.hpp"
 
 #include "rclcpp_action/rclcpp_action.hpp"
+#include <message_filters/subscriber.h>
+#include <message_filters/time_synchronizer.h>
+#include <message_filters/sync_policies/approximate_time.h>
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/twist_stamped.hpp>
 
 #include <as2_msgs/action/follow_path.hpp>
 #include <nav_msgs/msg/odometry.hpp>
@@ -60,9 +65,11 @@ namespace follow_path_base
         {
             node_ptr_ = node_ptr;
             goal_threshold_ = goal_threshold;
-            odom_sub_ = node_ptr_->create_subscription<nav_msgs::msg::Odometry>(
-                node_ptr_->generate_global_name(as2_names::topics::self_localization::odom), as2_names::topics::self_localization::qos,
-                std::bind(&FollowPathBase::odomCb, this, std::placeholders::_1));
+
+            pose_sub_ = std::make_shared<message_filters::Subscriber<geometry_msgs::msg::PoseStamped>>(node_ptr_, as2_names::topics::self_localization::pose, as2_names::topics::self_localization::qos.get_rmw_qos_profile());
+            twist_sub_ = std::make_shared<message_filters::Subscriber<geometry_msgs::msg::TwistStamped>>(node_ptr_, as2_names::topics::self_localization::twist, as2_names::topics::self_localization::qos.get_rmw_qos_profile());
+            synchronizer_ = std::make_shared<message_filters::Synchronizer<approximate_policy>>(approximate_policy(5), *(pose_sub_.get()), *(twist_sub_.get()));
+            synchronizer_->registerCallback(&FollowPathBase::state_callback, this);
 
             this->ownInit();
         };
@@ -81,15 +88,16 @@ namespace follow_path_base
 
     private:
         // TODO: if onExecute is done with timer no atomic attributes needed
-        void odomCb(const nav_msgs::msg::Odometry::ConstSharedPtr msg)
+        void state_callback(const geometry_msgs::msg::PoseStamped::ConstSharedPtr pose_msg,
+                            const geometry_msgs::msg::TwistStamped::ConstSharedPtr twist_msg)
         {
-            this->current_pose_x_ = msg->pose.pose.position.x;
-            this->current_pose_y_ = msg->pose.pose.position.y;
-            this->current_pose_z_ = msg->pose.pose.position.z;
+            this->current_pose_x_ = pose_msg->pose.position.x;
+            this->current_pose_y_ = pose_msg->pose.position.y;
+            this->current_pose_z_ = pose_msg->pose.position.z;
 
-            this->actual_speed_ = Eigen::Vector3d(msg->twist.twist.linear.x,
-                                                  msg->twist.twist.linear.y,
-                                                  msg->twist.twist.linear.z)
+            this->actual_speed_ = Eigen::Vector3d(twist_msg->twist.linear.x,
+                                                  twist_msg->twist.linear.y,
+                                                  twist_msg->twist.linear.z)
                                       .norm();
         };
 
@@ -106,7 +114,10 @@ namespace follow_path_base
         std::deque<Eigen::Vector3d> waypoints_;
 
     private:
-        rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
+        std::shared_ptr<message_filters::Subscriber<geometry_msgs::msg::PoseStamped>> pose_sub_;
+        std::shared_ptr<message_filters::Subscriber<geometry_msgs::msg::TwistStamped>> twist_sub_;
+        typedef message_filters::sync_policies::ApproximateTime<geometry_msgs::msg::PoseStamped, geometry_msgs::msg::TwistStamped> approximate_policy;
+        std::shared_ptr<message_filters::Synchronizer<approximate_policy>> synchronizer_;
     }; // FollowPathBase class
 
 } // follow_path_base namespace
