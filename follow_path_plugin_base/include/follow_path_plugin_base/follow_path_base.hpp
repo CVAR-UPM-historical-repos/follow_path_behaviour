@@ -49,7 +49,6 @@
 #include <geometry_msgs/msg/twist_stamped.hpp>
 
 #include <as2_msgs/action/follow_path.hpp>
-#include <nav_msgs/msg/odometry.hpp>
 
 #include <Eigen/Dense>
 #include <deque>
