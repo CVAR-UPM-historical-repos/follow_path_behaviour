@@ -34,11 +34,10 @@
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  ********************************************************************************/
 
-#include "follow_path_behaviour/follow_path_behaviour.hpp"
 #include "as2_core/core_functions.hpp"
+#include "follow_path_behaviour/follow_path_behaviour.hpp"
 
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]) {
   rclcpp::init(argc, argv);
 
   auto node = std::make_shared<FollowPathBehaviour>();

@@ -46,84 +46,75 @@
 #include <pluginlib/class_loader.hpp>
 #include "follow_path_plugin_base/follow_path_base.hpp"
 
-class FollowPathBehaviour : public as2::BasicBehaviour<as2_msgs::action::FollowPath>
-{
+class FollowPathBehaviour : public as2::BasicBehaviour<as2_msgs::action::FollowPath> {
 public:
-    using GoalHandleFollowPath = rclcpp_action::ServerGoalHandle<as2_msgs::action::FollowPath>;
+  using GoalHandleFollowPath = rclcpp_action::ServerGoalHandle<as2_msgs::action::FollowPath>;
 
-    FollowPathBehaviour() : as2::BasicBehaviour<as2_msgs::action::FollowPath>(as2_names::actions::behaviours::followpath)
-    {
-        try
-        {
-            this->declare_parameter<std::string>("default_follow_path_plugin");
-        }
-        catch(const rclcpp::ParameterTypeException& e)
-        {
-            RCLCPP_FATAL(this->get_logger(), "Launch argument <default_follow_path_plugin> not defined or malformed: %s", e.what());
-            this->~FollowPathBehaviour();
-        }
-        try
-        {
-            this->declare_parameter<double>("follow_path_threshold");
-        }
-        catch(const rclcpp::ParameterTypeException& e)
-        {
-            RCLCPP_FATAL(this->get_logger(), "Launch argument <follow_path_threshold> not defined or malformed: %s", e.what());
-            this->~FollowPathBehaviour();
-        }
-
-        loader_ = std::make_shared<pluginlib::ClassLoader<follow_path_base::FollowPathBase>>("follow_path_plugin_base", "follow_path_base::FollowPathBase");
-
-        try
-        {
-            std::string plugin_name = this->get_parameter("default_follow_path_plugin").as_string();
-            plugin_name += "::Plugin";
-            follow_path_ = loader_->createSharedInstance(plugin_name);
-            follow_path_->initialize(this, this->get_parameter("follow_path_threshold").as_double());
-            RCLCPP_INFO(this->get_logger(), "FOLLOW PATH PLUGIN LOADED: %s", plugin_name.c_str());
-        }
-        catch (pluginlib::PluginlibException &ex)
-        {
-            RCLCPP_ERROR(this->get_logger(), "The plugin failed to load for some reason. Error: %s\n", ex.what());
-            this->~FollowPathBehaviour();
-        }
-
-        RCLCPP_DEBUG(this->get_logger(), "Follow Path Behaviour ready!");
-    };
-
-    ~FollowPathBehaviour(){};
-
-    rclcpp_action::GoalResponse onAccepted(const std::shared_ptr<const as2_msgs::action::FollowPath::Goal> goal)
-    {
-        if (goal->trajectory_waypoints.poses.size() == 0)
-        {
-            RCLCPP_ERROR(this->get_logger(), "Trajectory waypoints are empty");
-            return rclcpp_action::GoalResponse::REJECT;
-        }
-
-        return follow_path_->onAccepted(goal);
+  FollowPathBehaviour()
+      : as2::BasicBehaviour<as2_msgs::action::FollowPath>(
+            as2_names::actions::behaviours::followpath) {
+    try {
+      this->declare_parameter<std::string>("default_follow_path_plugin");
+    } catch (const rclcpp::ParameterTypeException& e) {
+      RCLCPP_FATAL(this->get_logger(),
+                   "Launch argument <default_follow_path_plugin> not defined or malformed: %s",
+                   e.what());
+      this->~FollowPathBehaviour();
+    }
+    try {
+      this->declare_parameter<double>("follow_path_threshold");
+    } catch (const rclcpp::ParameterTypeException& e) {
+      RCLCPP_FATAL(this->get_logger(),
+                   "Launch argument <follow_path_threshold> not defined or malformed: %s",
+                   e.what());
+      this->~FollowPathBehaviour();
     }
 
-    rclcpp_action::CancelResponse onCancel(const std::shared_ptr<GoalHandleFollowPath> goal_handle)
-    {
-        return follow_path_->onCancel(goal_handle);
+    loader_ = std::make_shared<pluginlib::ClassLoader<follow_path_base::FollowPathBase>>(
+        "follow_path_plugin_base", "follow_path_base::FollowPathBase");
+
+    try {
+      std::string plugin_name = this->get_parameter("default_follow_path_plugin").as_string();
+      plugin_name += "::Plugin";
+      follow_path_ = loader_->createSharedInstance(plugin_name);
+      follow_path_->initialize(this, this->get_parameter("follow_path_threshold").as_double());
+      RCLCPP_INFO(this->get_logger(), "FOLLOW PATH PLUGIN LOADED: %s", plugin_name.c_str());
+    } catch (pluginlib::PluginlibException& ex) {
+      RCLCPP_ERROR(this->get_logger(), "The plugin failed to load for some reason. Error: %s\n",
+                   ex.what());
+      this->~FollowPathBehaviour();
     }
 
-    void onExecute(const std::shared_ptr<GoalHandleFollowPath> goal_handle)
-    {
-        if (follow_path_->onExecute(goal_handle))
-        {
-            RCLCPP_INFO(this->get_logger(), "Follow Path succeeded");
-        }
-        else
-        {
-            RCLCPP_WARN(this->get_logger(), "Follow Path canceled");
-        }
+    RCLCPP_DEBUG(this->get_logger(), "Follow Path Behaviour ready!");
+  };
+
+  ~FollowPathBehaviour(){};
+
+  rclcpp_action::GoalResponse onAccepted(
+      const std::shared_ptr<const as2_msgs::action::FollowPath::Goal> goal) {
+    if (goal->trajectory_waypoints.poses.size() == 0) {
+      RCLCPP_ERROR(this->get_logger(), "Trajectory waypoints are empty");
+      return rclcpp_action::GoalResponse::REJECT;
     }
+
+    return follow_path_->onAccepted(goal);
+  }
+
+  rclcpp_action::CancelResponse onCancel(const std::shared_ptr<GoalHandleFollowPath> goal_handle) {
+    return follow_path_->onCancel(goal_handle);
+  }
+
+  void onExecute(const std::shared_ptr<GoalHandleFollowPath> goal_handle) {
+    if (follow_path_->onExecute(goal_handle)) {
+      RCLCPP_INFO(this->get_logger(), "Follow Path succeeded");
+    } else {
+      RCLCPP_WARN(this->get_logger(), "Follow Path canceled");
+    }
+  }
 
 private:
-    std::shared_ptr<pluginlib::ClassLoader<follow_path_base::FollowPathBase>> loader_;
-    std::shared_ptr<follow_path_base::FollowPathBase> follow_path_;
+  std::shared_ptr<pluginlib::ClassLoader<follow_path_base::FollowPathBase>> loader_;
+  std::shared_ptr<follow_path_base::FollowPathBase> follow_path_;
 };
 
-#endif // FOLLOW_PATH_BEHAVIOUR_HPP
+#endif  // FOLLOW_PATH_BEHAVIOUR_HPP
