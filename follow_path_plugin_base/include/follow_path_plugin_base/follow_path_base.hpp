@@ -37,92 +37,170 @@
 #ifndef FOLLOW_PATH_BASE_HPP
 #define FOLLOW_PATH_BASE_HPP
 
-#include "as2_core/names/actions.hpp"
-#include "as2_core/names/topics.hpp"
-#include "as2_core/node.hpp"
+#include <rclcpp_action/rclcpp_action.hpp>
 
-#include <message_filters/subscriber.h>
-#include <message_filters/sync_policies/approximate_time.h>
-#include <message_filters/time_synchronizer.h>
-#include <geometry_msgs/msg/pose_stamped.hpp>
-#include <geometry_msgs/msg/twist_stamped.hpp>
-#include "rclcpp_action/rclcpp_action.hpp"
-
-#include <as2_msgs/action/follow_path.hpp>
+#include "as2_behavior/behavior_server.hpp"
+#include "as2_core/utils/frame_utils.hpp"
+#include "as2_core/utils/tf_utils.hpp"
+#include "as2_msgs/action/follow_path.hpp"
+#include "as2_msgs/msg/platform_info.hpp"
+#include "as2_msgs/msg/platform_status.hpp"
+#include "motion_reference_handlers/hover_motion.hpp"
 
 #include <Eigen/Dense>
-#include <deque>
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/twist_stamped.hpp>
 
 namespace follow_path_base {
+
+struct follow_path_plugin_params {
+  double default_follow_path_max_speed = 0.0;
+  double follow_path_threshold         = 0.0;
+};
+
 class FollowPathBase {
 public:
   using GoalHandleFollowPath = rclcpp_action::ServerGoalHandle<as2_msgs::action::FollowPath>;
 
-  void initialize(as2::Node *node_ptr, float goal_threshold) {
-    node_ptr_       = node_ptr;
-    goal_threshold_ = goal_threshold;
-
-    pose_sub_ = std::make_shared<message_filters::Subscriber<geometry_msgs::msg::PoseStamped>>(
-        node_ptr_, as2_names::topics::self_localization::pose,
-        as2_names::topics::self_localization::qos.get_rmw_qos_profile());
-    twist_sub_ = std::make_shared<message_filters::Subscriber<geometry_msgs::msg::TwistStamped>>(
-        node_ptr_, as2_names::topics::self_localization::twist,
-        as2_names::topics::self_localization::qos.get_rmw_qos_profile());
-    synchronizer_ = std::make_shared<message_filters::Synchronizer<approximate_policy>>(
-        approximate_policy(5), *(pose_sub_.get()), *(twist_sub_.get()));
-    synchronizer_->registerCallback(&FollowPathBase::state_callback, this);
-
-    this->ownInit();
-  };
-
-  virtual rclcpp_action::GoalResponse onAccepted(
-      const std::shared_ptr<const as2_msgs::action::FollowPath::Goal> goal) = 0;
-  virtual rclcpp_action::CancelResponse onCancel(
-      const std::shared_ptr<GoalHandleFollowPath> goal_handle)                    = 0;
-  virtual bool onExecute(const std::shared_ptr<GoalHandleFollowPath> goal_handle) = 0;
-
+  FollowPathBase(){};
   virtual ~FollowPathBase(){};
 
-protected:
-  FollowPathBase(){};
+  void initialize(as2::Node *node_ptr,
+                  const std::shared_ptr<as2::tf::TfHandler> tf_handler,
+                  follow_path_plugin_params &params) {
+    node_ptr_             = node_ptr;
+    params_               = params;
+    hover_motion_handler_ = std::make_shared<as2::motionReferenceHandlers::HoverMotion>(node_ptr_);
+    ownInit();
+  }
 
-  // To initialize needed publisher for each plugin
+  virtual Eigen::Vector3d getTargetPosition() = 0;
+
+  virtual void state_callback(geometry_msgs::msg::PoseStamped &pose_msg,
+                              geometry_msgs::msg::TwistStamped &twist_msg) {
+    actual_pose_ = pose_msg;
+
+    feedback_.actual_speed = Eigen::Vector3d(twist_msg.twist.linear.x, twist_msg.twist.linear.y,
+                                             twist_msg.twist.linear.z)
+                                 .norm();
+
+    if (goal_accepted_) {
+      feedback_.actual_distance_to_next_waypoint =
+          (getTargetPosition() - Eigen::Vector3d(actual_pose_.pose.position.x,
+                                                 actual_pose_.pose.position.y,
+                                                 actual_pose_.pose.position.z))
+              .norm();
+    }
+
+    distance_measured_ = true;
+    return;
+  }
+
+  void platform_info_callback(const as2_msgs::msg::PlatformInfo::SharedPtr msg) {
+    platform_state_ = msg->status.state;
+    return;
+  }
+
+  virtual bool on_deactivate(const std::shared_ptr<std::string> &message) = 0;
+  virtual bool on_pause(const std::shared_ptr<std::string> &message)      = 0;
+  virtual bool on_resume(const std::shared_ptr<std::string> &message)     = 0;
+
+  virtual bool on_activate(std::shared_ptr<const as2_msgs::action::FollowPath::Goal> goal) {
+    as2_msgs::action::FollowPath::Goal goal_candidate = *goal;
+    if (!processGoal(goal_candidate)) return false;
+
+    if (own_activate(std::make_shared<as2_msgs::action::FollowPath::Goal>(goal_candidate))) {
+      goal_ = goal_candidate;
+      return true;
+    }
+    return false;
+  }
+
+  virtual bool on_modify(std::shared_ptr<const as2_msgs::action::FollowPath::Goal> goal) {
+    as2_msgs::action::FollowPath::Goal goal_candidate = *goal;
+    if (!processGoal(goal_candidate)) return false;
+
+    if (own_modify(std::make_shared<as2_msgs::action::FollowPath::Goal>(goal_candidate))) {
+      goal_ = goal_candidate;
+      return true;
+    }
+    return false;
+  }
+
+  virtual as2_behavior::ExecutionStatus on_run(
+      const std::shared_ptr<const as2_msgs::action::FollowPath::Goal> goal,
+      std::shared_ptr<as2_msgs::action::FollowPath::Feedback> &feedback_msg,
+      std::shared_ptr<as2_msgs::action::FollowPath::Result> &result_msg) {
+    goal_accepted_                       = true;
+    as2_behavior::ExecutionStatus status = own_run();
+
+    feedback_msg = std::make_shared<as2_msgs::action::FollowPath::Feedback>(feedback_);
+    result_msg   = std::make_shared<as2_msgs::action::FollowPath::Result>(result_);
+    return status;
+  }
+
+  virtual void on_excution_end(const as2_behavior::ExecutionStatus &state) {
+    distance_measured_ = false;
+    goal_accepted_     = false;
+    own_execution_end(state);
+    return;
+  }
+
+protected:
   virtual void ownInit(){};
 
-private:
-  // TODO: if onExecute is done with timer no atomic attributes needed
-  void state_callback(const geometry_msgs::msg::PoseStamped::ConstSharedPtr pose_msg,
-                      const geometry_msgs::msg::TwistStamped::ConstSharedPtr twist_msg) {
-    this->current_pose_x_ = pose_msg->pose.position.x;
-    this->current_pose_y_ = pose_msg->pose.position.y;
-    this->current_pose_z_ = pose_msg->pose.position.z;
+  virtual bool own_activate(std::shared_ptr<const as2_msgs::action::FollowPath::Goal> goal) {
+    return true;
+  }
 
-    this->actual_speed_ = Eigen::Vector3d(twist_msg->twist.linear.x, twist_msg->twist.linear.y,
-                                          twist_msg->twist.linear.z)
-                              .norm();
+  virtual as2_behavior::ExecutionStatus own_run() = 0;
+
+  virtual bool own_modify(std::shared_ptr<const as2_msgs::action::FollowPath::Goal> goal) {
+    return true;
+  }
+
+  virtual void own_execution_end(const as2_behavior::ExecutionStatus &state) = 0;
+
+  inline void sendHover() {
+    hover_motion_handler_->sendHover();
+    return;
+  };
+
+  inline float getActualYaw() {
+    return as2::frame::getYawFromQuaternion(actual_pose_.pose.orientation);
   };
 
 protected:
   as2::Node *node_ptr_;
-  float goal_threshold_;
 
-  std::atomic<float> current_pose_x_;
-  std::atomic<float> current_pose_y_;
-  std::atomic<float> current_pose_z_;
+  as2_msgs::action::FollowPath::Goal goal_;
+  as2_msgs::action::FollowPath::Feedback feedback_;
+  as2_msgs::action::FollowPath::Result result_;
 
-  std::atomic<float> actual_speed_;
+  int platform_state_;
+  follow_path_plugin_params params_;
+  geometry_msgs::msg::PoseStamped actual_pose_;
+  bool distance_measured_ = false;
+  bool goal_accepted_     = false;
 
-  std::deque<Eigen::Vector3d> waypoints_;
+  std::shared_ptr<as2::motionReferenceHandlers::HoverMotion> hover_motion_handler_ = nullptr;
 
 private:
-  std::shared_ptr<message_filters::Subscriber<geometry_msgs::msg::PoseStamped>> pose_sub_;
-  std::shared_ptr<message_filters::Subscriber<geometry_msgs::msg::TwistStamped>> twist_sub_;
-  typedef message_filters::sync_policies::ApproximateTime<geometry_msgs::msg::PoseStamped,
-                                                          geometry_msgs::msg::TwistStamped>
-      approximate_policy;
-  std::shared_ptr<message_filters::Synchronizer<approximate_policy>> synchronizer_;
-};  // FollowPathBase class
+  bool processGoal(as2_msgs::action::FollowPath::Goal &_goal) {
+    if (platform_state_ != as2_msgs::msg::PlatformStatus::FLYING) {
+      RCLCPP_ERROR(node_ptr_->get_logger(), "Behavior reject, platform is not flying");
+      return false;
+    }
 
+    if (!distance_measured_) {
+      RCLCPP_ERROR(node_ptr_->get_logger(), "Behavior reject, there is no localization");
+      return false;
+    }
+
+    return true;
+  }
+
+};  // FollowPathBase class
 }  // namespace follow_path_base
 
 #endif  // FOLLOW_PATH_BASE_HPP
