@@ -155,11 +155,10 @@ public:
       std::vector<as2_msgs::msg::PoseWithID> path_converted;
       path_converted.reserve(goal->path.size());
 
+      geometry_msgs::msg::PoseStamped pose_msg;
+      pose_msg.header = goal->header;
       for (as2_msgs::msg::PoseWithID waypoint : goal->path) {
-        geometry_msgs::msg::PoseStamped pose_msg;
-        pose_msg.header = goal->header;
         pose_msg.pose   = waypoint.pose;
-
         if (!tf_handler_->tryConvert(pose_msg, "earth")) {
           RCLCPP_ERROR(this->get_logger(), "GotoBehaviour: can not get waypoint in earth frame");
           return false;
@@ -167,7 +166,8 @@ public:
         waypoint.pose = pose_msg.pose;
         path_converted.push_back(waypoint);
       }
-      new_goal.path = path_converted;
+      new_goal.header.frame_id = "earth";
+      new_goal.path            = path_converted;
     }
 
     new_goal.max_speed = (goal->max_speed != 0.0f)
