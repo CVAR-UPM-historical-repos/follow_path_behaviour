@@ -4,14 +4,16 @@
 class As2FollowPathBaseTest : public follow_path_base::FollowPathBase {
 public:
   As2FollowPathBaseTest(){};
-  bool on_deactivate(const std::shared_ptr<std::string> &message) override { return false; };
-  bool on_pause(const std::shared_ptr<std::string> &message) override { return false; };
-  bool on_resume(const std::shared_ptr<std::string> &message) override { return false; };
+  bool own_activate(as2_msgs::action::FollowPath::Goal &goal) override { return true; };
+  bool own_modify(as2_msgs::action::FollowPath::Goal &goal) override { return true; };
+  bool own_deactivate(const std::shared_ptr<std::string> &message) override { return true; };
+  bool own_pause(const std::shared_ptr<std::string> &message) override { return true; };
+  bool own_resume(const std::shared_ptr<std::string> &message) override { return true; };
+  void own_execution_end(const as2_behavior::ExecutionStatus &state) override{};
   as2_behavior::ExecutionStatus own_run() override {
     return as2_behavior::ExecutionStatus::SUCCESS;
   };
-  void own_execution_end(const as2_behavior::ExecutionStatus &state) override{};
-  Eigen::Vector3d getTargetPosition() override { return Eigen::Vector3d(0, 0, 0); };
+  Eigen::Vector3d getTargetPosition() override { return Eigen::Vector3d::Zero(); };
 };
 
 int main(int argc, char *argv[]) {

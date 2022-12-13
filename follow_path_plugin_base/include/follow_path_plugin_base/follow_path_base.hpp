@@ -66,15 +66,14 @@ public:
   virtual ~FollowPathBase(){};
 
   void initialize(as2::Node *node_ptr,
-                  const std::shared_ptr<as2::tf::TfHandler> tf_handler,
+                  std::shared_ptr<as2::tf::TfHandler> tf_handler,
                   follow_path_plugin_params &params) {
     node_ptr_             = node_ptr;
+    tf_handler            = tf_handler;
     params_               = params;
     hover_motion_handler_ = std::make_shared<as2::motionReferenceHandlers::HoverMotion>(node_ptr_);
     ownInit();
   }
-
-  virtual Eigen::Vector3d getTargetPosition() = 0;
 
   virtual void state_callback(geometry_msgs::msg::PoseStamped &pose_msg,
                               geometry_msgs::msg::TwistStamped &twist_msg) {
@@ -92,7 +91,7 @@ public:
               .norm();
     }
 
-    distance_measured_ = true;
+    localization_flag_ = true;
     return;
   }
 
@@ -101,30 +100,41 @@ public:
     return;
   }
 
-  virtual bool on_deactivate(const std::shared_ptr<std::string> &message) = 0;
-  virtual bool on_pause(const std::shared_ptr<std::string> &message)      = 0;
-  virtual bool on_resume(const std::shared_ptr<std::string> &message)     = 0;
-
-  virtual bool on_activate(std::shared_ptr<const as2_msgs::action::FollowPath::Goal> goal) {
+  bool on_activate(std::shared_ptr<const as2_msgs::action::FollowPath::Goal> goal) {
     as2_msgs::action::FollowPath::Goal goal_candidate = *goal;
     if (!processGoal(goal_candidate)) return false;
 
-    if (own_activate(std::make_shared<as2_msgs::action::FollowPath::Goal>(goal_candidate))) {
+    if (own_activate(goal_candidate)) {
       goal_ = goal_candidate;
       return true;
     }
     return false;
   }
 
-  virtual bool on_modify(std::shared_ptr<const as2_msgs::action::FollowPath::Goal> goal) {
+  bool on_modify(std::shared_ptr<const as2_msgs::action::FollowPath::Goal> goal) {
     as2_msgs::action::FollowPath::Goal goal_candidate = *goal;
     if (!processGoal(goal_candidate)) return false;
 
-    if (own_modify(std::make_shared<as2_msgs::action::FollowPath::Goal>(goal_candidate))) {
+    if (own_modify(goal_candidate)) {
       goal_ = goal_candidate;
       return true;
     }
     return false;
+  }
+
+  inline bool on_deactivate(const std::shared_ptr<std::string> &message) {
+    return own_deactivate(message);
+  }
+
+  inline bool on_pause(const std::shared_ptr<std::string> &message) { return own_pause(message); }
+
+  inline bool on_resume(const std::shared_ptr<std::string> &message) { return own_resume(message); }
+
+  void on_excution_end(const as2_behavior::ExecutionStatus &state) {
+    localization_flag_ = false;
+    goal_accepted_     = false;
+    own_execution_end(state);
+    return;
   }
 
   virtual as2_behavior::ExecutionStatus on_run(
@@ -139,27 +149,54 @@ public:
     return status;
   }
 
-  virtual void on_excution_end(const as2_behavior::ExecutionStatus &state) {
-    distance_measured_ = false;
-    goal_accepted_     = false;
-    own_execution_end(state);
-    return;
+private:
+  bool processGoal(as2_msgs::action::FollowPath::Goal &_goal) {
+    if (platform_state_ != as2_msgs::msg::PlatformStatus::FLYING) {
+      RCLCPP_ERROR(node_ptr_->get_logger(), "Behavior reject, platform is not flying");
+      return false;
+    }
+
+    if (!localization_flag_) {
+      RCLCPP_ERROR(node_ptr_->get_logger(), "Behavior reject, there is no localization");
+      return false;
+    }
+
+    return true;
   }
+
+private:
+  std::shared_ptr<as2::motionReferenceHandlers::HoverMotion> hover_motion_handler_ = nullptr;
+  bool goal_accepted_                                                              = false;
+
+  /* Interface with plugin */
 
 protected:
   virtual void ownInit(){};
 
-  virtual bool own_activate(std::shared_ptr<const as2_msgs::action::FollowPath::Goal> goal) {
-    return true;
+  virtual bool own_activate(as2_msgs::action::FollowPath::Goal &goal) = 0;
+
+  virtual bool own_modify(as2_msgs::action::FollowPath::Goal &goal) {
+    RCLCPP_INFO(node_ptr_->get_logger(), "Follow path can not be modified, not implemented");
+    return false;
   }
 
-  virtual as2_behavior::ExecutionStatus own_run() = 0;
+  virtual bool own_deactivate(const std::shared_ptr<std::string> &message) = 0;
 
-  virtual bool own_modify(std::shared_ptr<const as2_msgs::action::FollowPath::Goal> goal) {
-    return true;
+  virtual bool own_pause(const std::shared_ptr<std::string> &message) {
+    RCLCPP_INFO(node_ptr_->get_logger(),
+                "Follow path can not be paused, not implemented, try to cancel it");
+    return false;
+  }
+
+  virtual bool own_resume(const std::shared_ptr<std::string> &message) {
+    RCLCPP_INFO(node_ptr_->get_logger(), "Follow path can not be resumed, not implemented");
+    return false;
   }
 
   virtual void own_execution_end(const as2_behavior::ExecutionStatus &state) = 0;
+  virtual as2_behavior::ExecutionStatus own_run()                            = 0;
+
+  virtual Eigen::Vector3d getTargetPosition() = 0;
 
   inline void sendHover() {
     hover_motion_handler_->sendHover();
@@ -172,6 +209,7 @@ protected:
 
 protected:
   as2::Node *node_ptr_;
+  std::shared_ptr<as2::tf::TfHandler> tf_handler = nullptr;
 
   as2_msgs::action::FollowPath::Goal goal_;
   as2_msgs::action::FollowPath::Feedback feedback_;
@@ -180,26 +218,7 @@ protected:
   int platform_state_;
   follow_path_plugin_params params_;
   geometry_msgs::msg::PoseStamped actual_pose_;
-  bool distance_measured_ = false;
-  bool goal_accepted_     = false;
-
-  std::shared_ptr<as2::motionReferenceHandlers::HoverMotion> hover_motion_handler_ = nullptr;
-
-private:
-  bool processGoal(as2_msgs::action::FollowPath::Goal &_goal) {
-    if (platform_state_ != as2_msgs::msg::PlatformStatus::FLYING) {
-      RCLCPP_ERROR(node_ptr_->get_logger(), "Behavior reject, platform is not flying");
-      return false;
-    }
-
-    if (!distance_measured_) {
-      RCLCPP_ERROR(node_ptr_->get_logger(), "Behavior reject, there is no localization");
-      return false;
-    }
-
-    return true;
-  }
-
+  bool localization_flag_ = false;
 };  // FollowPathBase class
 }  // namespace follow_path_base
 
