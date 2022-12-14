@@ -72,6 +72,7 @@ public:
     tf_handler            = tf_handler;
     params_               = params;
     hover_motion_handler_ = std::make_shared<as2::motionReferenceHandlers::HoverMotion>(node_ptr_);
+    reset();
     ownInit();
   }
 
@@ -131,8 +132,7 @@ public:
   inline bool on_resume(const std::shared_ptr<std::string> &message) { return own_resume(message); }
 
   void on_excution_end(const as2_behavior::ExecutionStatus &state) {
-    localization_flag_ = false;
-    goal_accepted_     = false;
+    reset();
     own_execution_end(state);
     return;
   }
@@ -168,6 +168,16 @@ private:
     }
 
     return true;
+  }
+
+  void reset() {
+    localization_flag_                         = false;
+    goal_accepted_                             = false;
+    feedback_.actual_distance_to_next_waypoint = 2.0 * params_.follow_path_threshold;
+    feedback_.next_waypoint_id                 = "unknown";
+    feedback_.actual_speed                     = 0.0;
+    feedback_.remaining_waypoints              = 0;
+    return;
   }
 
 private:
