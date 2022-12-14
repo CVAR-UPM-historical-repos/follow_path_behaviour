@@ -161,6 +161,12 @@ private:
       return false;
     }
 
+    for (auto &waypoint : _goal.path) {
+      if (waypoint.id == "") {
+        RCLCPP_ERROR(node_ptr_->get_logger(), "Behavior reject, waypoint id is empty");
+      }
+    }
+
     return true;
   }
 
